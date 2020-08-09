@@ -1,0 +1,94 @@
+Configuration	STM32F405RG
+STM32CubeMX 	6.0.0
+Date	08/08/2020
+MCU	STM32F405RGTx
+
+
+
+PERIPHERALS	MODES	FUNCTIONS	PINS
+I2C1	I2C	I2C1_SCL	PB6
+I2C1	I2C	I2C1_SDA	PB7
+I2S2	Full-Duplex Master	I2S2_CK	PB10
+I2S2	Full-Duplex Master	I2S2_SD	PC3
+I2S2	Full-Duplex Master	I2S2_WS	PB12
+I2S2	Full-Duplex Master	I2S2_ext_SD	PC2
+I2S2	Activated	I2S2_MCK	PC6
+SPI1	Transmit Only Master	SPI1_MOSI	PA7
+SPI1	Transmit Only Master	SPI1_SCK	PB3
+SYS	SysTick	SYS_VS_Systick	VP_SYS_VS_Systick
+USART2	Asynchronous	USART2_RX	PA3
+USART2	Asynchronous	USART2_TX	PA2
+
+
+
+Pin Nb	PINs	FUNCTIONs	LABELs
+10	PC2	I2S2_ext_SD	
+11	PC3	I2S2_SD	
+16	PA2	USART2_TX	
+17	PA3	USART2_RX	
+21	PA5	GPIO_Output	
+23	PA7	SPI1_MOSI	
+29	PB10	I2S2_CK	
+33	PB12	I2S2_WS	
+34	PB13	GPIO_Output	
+37	PC6	I2S2_MCK	
+55	PB3	SPI1_SCK	
+58	PB6	I2C1_SCL	
+59	PB7	I2C1_SDA	
+PERIPHERALS	MODES	FUNCTIONS	PINS
+I2C1	I2C	I2C1_SCL	PB6
+I2C1	I2C	I2C1_SDA	PB7
+I2S2	Full-Duplex Master	I2S2_CK	PB10
+I2S2	Full-Duplex Master	I2S2_SD	PC3
+I2S2	Full-Duplex Master	I2S2_WS	PB12
+I2S2	Full-Duplex Master	I2S2_ext_SD	PC2
+I2S2	Activated	I2S2_MCK	PC6
+SPI1	Transmit Only Master	SPI1_MOSI	PA7
+SPI1	Transmit Only Master	SPI1_SCK	PB3
+SYS	SysTick	SYS_VS_Systick	VP_SYS_VS_Systick
+USART2	Asynchronous	USART2_RX	PA3
+USART2	Asynchronous	USART2_TX	PA2
+
+
+
+Pin Nb	PINs	FUNCTIONs	LABELs
+10	PC2	I2S2_ext_SD	
+11	PC3	I2S2_SD	
+16	PA2	USART2_TX	
+17	PA3	USART2_RX	
+21	PA5	GPIO_Output	
+23	PA7	SPI1_MOSI	
+29	PB10	I2S2_CK	
+33	PB12	I2S2_WS	
+34	PB13	GPIO_Output	
+37	PC6	I2S2_MCK	
+55	PB3	SPI1_SCK	
+58	PB6	I2C1_SCL	
+59	PB7	I2C1_SDA	
+
+
+
+SOFTWARE PROJECT
+
+Project Settings : 
+Project Name : STM32F405RG
+Project Folder : /home/xenir/STM32CubeIDE/workspace_1.3.0/STM32F405RG
+Toolchain / IDE : STM32CubeIDE
+Firmware Package Name and Version : STM32Cube FW_F4 V1.25.0
+
+
+Code Generation Settings : 
+STM32Cube MCU packages and embedded software packs : Copy only the necessary library files
+Generate peripheral initialization as a pair of '.c/.h' files per peripheral : No
+Backup previously generated files when re-generating : No
+Delete previously generated files when not re-generated : Yes
+Set all free pins as analog (to optimize the power consumption) : No
+
+
+Toolchains Settings : 
+Compiler Optimizations : 
+
+
+
+
+
