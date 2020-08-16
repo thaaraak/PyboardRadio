@@ -944,7 +944,6 @@ static void I2SEx_TxRxDMACplt(DMA_HandleTypeDef *hdma)
         HAL_I2SEx_TxRxCpltCallback(hi2s);
 #endif
   }
-
 }
 
 /**
