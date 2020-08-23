@@ -1,29 +1,22 @@
-#ifndef __FREQUENCY_DISPLAY_H
-#define __FREQUENCY_DISPLAY_H
+#ifndef __FREQUENCY_DISPLAYLCD_H
+#define __FREQUENCY_DISPLAYLCD_H
 
 #include "stm32f4xx_hal.h"
 #include <stdbool.h>
 
 #include "Encoder.h"
-#include "OLED_Driver.h"
-#include "OLED_GFX.h"
-#include "gfxfont.h"
-#include "FreeMono12pt7b.h"
+#include "LiquidCrystal_I2C.h"
 
-struct radixpos
-{
-	int	pos;
-	int mult;
-};
+
 
 #define MAX_RADIX	6
 
-class FrequencyDisplay
+class FrequencyDisplayLCD
 {
   
   public:
       
-    FrequencyDisplay( OLED_GFX* oled, Encoder* encoder, int frequency );
+    FrequencyDisplayLCD( LiquidCrystal_I2C* lcd, Encoder* encoder, int frequency );
 
     void change();
     void changeMode();
@@ -33,10 +26,15 @@ class FrequencyDisplay
 
     int getFrequency() { return _frequency; }
 
-    void setColor( uint16_t color, uint16_t bgcolor ) { _color = color; _bgcolor = bgcolor; }
-      
+
   private:
     
+    struct radixpos
+    {
+    	int	pos;
+    	int mult;
+    };
+
     enum Mode
     {
           MODE_CHANGE_FREQUENCY,
@@ -53,18 +51,12 @@ class FrequencyDisplay
     		{ 1, 1000000 }
     };
 
-    OLED_GFX*	_oled;
+    LiquidCrystal_I2C*	_lcd;
     Encoder*	_encoder;
-    GFXfont*	_font;
 
     int 		_frequency;
     int			_radix;
     Mode		_mode;
-    uint16_t 	_color;
-    uint16_t 	_bgcolor;
-
-    uint8_t		_xadvance;
-    uint8_t		_yadvance;
 };
 
 

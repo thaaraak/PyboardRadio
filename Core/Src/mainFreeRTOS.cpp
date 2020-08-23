@@ -22,6 +22,16 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "coeffs.h"
+#include <arm_math.h>
+#include <string.h>
+#include <stdio.h>
+
+#include "si5351.h"
+#include "OLED_Driver.h"
+#include "OLED_GFX.h"
+#include "FrequencyDisplay.h"
+#include "Encoder.h"
 
 /* USER CODE END Includes */
 
@@ -41,16 +51,50 @@
 
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
-
 I2S_HandleTypeDef hi2s2;
 DMA_HandleTypeDef hdma_spi2_rx;
 DMA_HandleTypeDef hdma_i2s2_ext_tx;
-
 SPI_HandleTypeDef hspi1;
-
 TIM_HandleTypeDef htim6;
 
+osThreadId_t filterTaskHandle;
+osThreadAttr_t filterTask_attributes;
+osThreadId_t displayTaskHandle;
+osThreadAttr_t displayTask_attributes;
+
+
 /* USER CODE BEGIN PV */
+
+Si5351 synth;
+
+#define SAMPLES			256				// Total number of samples left and right
+#define	BUF_SAMPLES		SAMPLES * 4		// Size of DMA tx/rx buffer samples * left/right * 2 for 32 bit samples
+
+// DMA Buffers
+uint16_t rxBuf[BUF_SAMPLES];
+uint16_t txBuf[BUF_SAMPLES];
+
+volatile int halfComplete = 0;
+volatile int fullComplete = 0;
+
+// Processing Buffers
+
+float32_t	*coeffsLeft;
+float32_t	*coeffsRight;
+float32_t	stateLeft[SAMPLES/2 + NUM_TAPS - 1];
+float32_t	stateRight[SAMPLES/2 + NUM_TAPS - 1];
+
+float32_t	srcLeft[SAMPLES/2];
+float32_t	srcRight[SAMPLES/2];
+float32_t	destLeft[SAMPLES/2];
+float32_t	destRight[SAMPLES/2];
+
+arm_status stat;
+arm_fir_instance_f32 arm_inst_left;
+arm_fir_instance_f32 arm_inst_right;
+
+OLED_GFX oled = OLED_GFX();
+Encoder encoder( GPIOB, GPIO_PIN_13, GPIOB, GPIO_PIN_14 );
 
 /* USER CODE END PV */
 
@@ -62,12 +106,42 @@ static void MX_I2S2_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM6_Init(void);
+
+void StartFilterTask(void *argument);
+void StartDisplayTask(void *argument);
+
 /* USER CODE BEGIN PFP */
+
+void doPassthru(int b);
+void doFIR(int b);
+void changeFreqency( int f );
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+void changeFrequency( int currentFrequency )
+{
+	  int mult = 0;
+
+	  if ( currentFrequency < 8000000 )
+		  mult = 100;
+	  else if ( currentFrequency < 11000000 )
+		  mult = 80;
+	  else if ( currentFrequency < 15000000 )
+		  mult = 50;
+
+	  uint64_t freq = currentFrequency * 100ULL;
+	  uint64_t pllFreq = freq * mult;
+
+	  synth.set_freq_manual(freq, pllFreq, SI5351_CLK0);
+	  synth.set_freq_manual(freq, pllFreq, SI5351_CLK2);
+
+	  synth.set_phase(SI5351_CLK0, 0);
+	  synth.set_phase(SI5351_CLK2, mult);
+	  synth.pll_reset(SI5351_PLLA);
+}
 
 /* USER CODE END 0 */
 
@@ -75,6 +149,9 @@ static void MX_TIM6_Init(void);
   * @brief  The application entry point.
   * @retval int
   */
+
+#define HAL_Delay	vTaskDelay
+
 int main(void)
 {
   /* USER CODE BEGIN 1 */
@@ -104,19 +181,76 @@ int main(void)
   MX_I2C1_Init();
   MX_SPI1_Init();
   MX_TIM6_Init();
+
+  /* Init scheduler */
+  osKernelInitialize();
+
   /* USER CODE BEGIN 2 */
+
+  coeffsLeft = minus45Coeffs;
+  coeffsRight = plus45Coeffs;
+
+  arm_fir_init_f32(
+		  &arm_inst_left,
+		  NUM_TAPS,
+		  coeffsLeft,
+		  &stateLeft[0],
+		  SAMPLES/2
+  );
+
+  arm_fir_init_f32(
+		  &arm_inst_right,
+		  NUM_TAPS,
+		  coeffsRight,
+		  &stateRight[0],
+		  SAMPLES/2
+  );
+
+  synth.init( &hi2c1, SI5351_CRYSTAL_LOAD_8PF, 25000000, 0 );
+  changeFrequency( 7200000 );
 
   /* USER CODE END 2 */
 
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
+  filterTask_attributes.name = "filterTask";
+  filterTask_attributes.priority = (osPriority_t) osPriorityAboveNormal;
+  filterTask_attributes.stack_size = 128 * 4;
+
+  displayTask_attributes.name = "displayTask";
+  displayTask_attributes.priority = (osPriority_t) osPriorityLow;
+  displayTask_attributes.stack_size = 128 * 4;
+
+
+  filterTaskHandle = osThreadNew(StartFilterTask, NULL, &filterTask_attributes);
+  //displayTaskHandle = osThreadNew(StartDisplayTask, NULL, &displayTask_attributes);
+  osKernelStart();
+
+/*
   while (1)
   {
-    /* USER CODE END WHILE */
 
-    /* USER CODE BEGIN 3 */
+	  if ( halfComplete )
+	  {
+		  doFIR(0);
+		  halfComplete = 0;
+	  }
+
+	  else if ( fullComplete )
+	  {
+		  doFIR(1);
+		  fullComplete = 0;
+	  }
+
+	  if ( encoder.hasChanged() )
+	  {
+		  display.change();
+		  encoder.reset();
+	  }
+
+	  HAL_GPIO_TogglePin( GPIOC, GPIO_PIN_5 );
+
   }
-  /* USER CODE END 3 */
+	*/
+
 }
 
 /**
@@ -277,11 +411,7 @@ static void MX_SPI1_Init(void)
 
 }
 
-/**
-  * @brief TIM6 Initialization Function
-  * @param None
-  * @retval None
-  */
+
 static void MX_TIM6_Init(void)
 {
 
@@ -315,23 +445,23 @@ static void MX_TIM6_Init(void)
 
 }
 
+
 /**
   * Enable DMA controller clock
   */
 static void MX_DMA_Init(void)
 {
 
-  /* DMA controller clock enable */
-  __HAL_RCC_DMA1_CLK_ENABLE();
+	  /* DMA controller clock enable */
+	  __HAL_RCC_DMA1_CLK_ENABLE();
 
-  /* DMA interrupt init */
-  /* DMA1_Stream3_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream3_IRQn, 5, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream3_IRQn);
-  /* DMA1_Stream4_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 5, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
-
+	  /* DMA interrupt init */
+	  /* DMA1_Stream3_IRQn interrupt configuration */
+	  HAL_NVIC_SetPriority(DMA1_Stream3_IRQn, 5, 0);
+	  HAL_NVIC_EnableIRQ(DMA1_Stream3_IRQn);
+	  /* DMA1_Stream4_IRQn interrupt configuration */
+	  HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 5, 0);
+	  HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
 }
 
 /**
@@ -368,11 +498,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : SSB_SW_Pin ENC_SW_Pin */
-  GPIO_InitStruct.Pin = SSB_SW_Pin|ENC_SW_Pin;
+  /*Configure GPIO pin : ENC_SW_Pin */
+  GPIO_InitStruct.Pin = ENC_SW_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_Init(ENC_SW_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : ENC_CLK_Pin ENC_DT_Pin */
   GPIO_InitStruct.Pin = ENC_CLK_Pin|ENC_DT_Pin;
@@ -386,7 +516,198 @@ static void MX_GPIO_Init(void)
 
 }
 
+
 /* USER CODE BEGIN 4 */
+
+void StartFilterTask(void *argument)
+{
+
+  HAL_I2SEx_TransmitReceive_DMA(&hi2s2, txBuf, rxBuf, SAMPLES*2 );
+
+  for(;;)
+  {
+	  vTaskSuspend( (TaskHandle_t)filterTaskHandle );
+
+	  if ( halfComplete )
+	  {
+		  doFIR(0);
+		  halfComplete = 0;
+	  }
+
+	  else if ( fullComplete )
+	  {
+		  doFIR(1);
+		  fullComplete = 0;
+	  }
+
+	  HAL_GPIO_TogglePin( GPIOC, GPIO_PIN_5 );
+
+      //osDelay(1);
+  }
+}
+
+void StartDisplayTask(void *argument)
+{
+
+  FrequencyDisplay display = FrequencyDisplay( &oled, &encoder, 7200000 );
+
+  for(;;)
+  {
+	  /*
+	  if ( encoder.hasChanged() )
+	  {
+		  display.change();
+		  encoder.reset();
+	  }
+*/
+	  osDelay(2000);
+  }
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  UNUSED(htim);
+}
+
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  UNUSED(GPIO_Pin);
+
+  if ( GPIO_Pin == ENC_CLK_Pin )
+	  encoder.clkInterrupt();
+  else if ( GPIO_Pin == ENC_DT_Pin )
+	  encoder.dtInterrupt();
+
+}
+
+
+void doPassthru( int b )
+{
+
+//	  	HAL_GPIO_WritePin( GPIOB, GPIO_PIN_13, GPIO_PIN_SET );
+
+
+		int startBuf = b * BUF_SAMPLES / 2;
+		int endBuf = startBuf + BUF_SAMPLES / 2;
+
+		int i = 0;
+		for ( int pos = startBuf ; pos < endBuf ; pos+=4 )
+		{
+			  srcLeft[i] = ( (rxBuf[pos]<<16)|rxBuf[pos+1] );
+			  srcRight[i] = ( (rxBuf[pos+2]<<16)|rxBuf[pos+3] );
+			  i++;
+		}
+
+		i = 0;
+
+		for ( int pos = startBuf ; pos < endBuf ; pos+=4 )
+		{
+			  int lval = srcLeft[i];
+			  int rval = srcRight[i];
+
+			  txBuf[pos] = (lval>>16)&0xFFFF;
+			  txBuf[pos+1] = lval&0xFFFF;
+			  txBuf[pos+2] = (rval>>16)&0xFFFF;
+			  txBuf[pos+3] = rval&0xFFFF;
+
+			  i++;
+		}
+
+//	  	HAL_GPIO_WritePin( GPIOB, GPIO_PIN_13, GPIO_PIN_RESET );
+
+}
+
+void doFIR( int b )
+{
+
+	  	HAL_GPIO_WritePin( GPIOB, GPIO_PIN_13, GPIO_PIN_SET );
+
+
+		int startBuf = b * BUF_SAMPLES / 2;
+		int endBuf = startBuf + BUF_SAMPLES / 2;
+
+		int i = 0;
+		for ( int pos = startBuf ; pos < endBuf ; pos+=4 )
+		{
+			  srcLeft[i] = ( (rxBuf[pos]<<16)|rxBuf[pos+1] );
+			  srcRight[i] = ( (rxBuf[pos+2]<<16)|rxBuf[pos+3] );
+			  i++;
+		}
+
+		i = 0;
+
+		arm_fir_f32	(
+				&arm_inst_left,
+				srcLeft,
+				destLeft,
+				SAMPLES/2
+		);
+
+		arm_fir_f32	(
+				&arm_inst_right,
+				srcLeft,
+				destRight,
+				SAMPLES/2
+		);
+
+		for ( int pos = startBuf ; pos < endBuf ; pos+=4 )
+		{
+			  int lval = destLeft[i];
+			  int rval = destRight[i];
+
+			  txBuf[pos] = (lval>>16)&0xFFFF;
+			  txBuf[pos+1] = lval&0xFFFF;
+			  txBuf[pos+2] = (rval>>16)&0xFFFF;
+			  txBuf[pos+3] = rval&0xFFFF;
+
+			  i++;
+		}
+
+	  	HAL_GPIO_WritePin( GPIOB, GPIO_PIN_13, GPIO_PIN_RESET );
+
+}
+
+/*
+ * 		NOTE: There appears to be a bug with
+
+static void I2SEx_TxRxDMACplt(DMA_HandleTypeDef *hdma)
+
+in stm32f4xx_hal_i2s_ex.c. The original function checked if DMA mode is NORMAL
+and did nothing in the case of DMA mode == CIRCULAR. The following lines had to be
+added to the function at the bottom
+
+  else
+  {
+#if (USE_HAL_I2S_REGISTER_CALLBACKS == 1U)
+        hi2s->TxRxCpltCallback(hi2s);
+#else
+        HAL_I2SEx_TxRxCpltCallback(hi2s);
+#endif
+
+ */
+
+void HAL_I2SEx_TxRxCpltCallback(I2S_HandleTypeDef *hi2s)
+{
+	UNUSED(hi2s);
+	fullComplete = 1;
+
+	BaseType_t checkIfYieldRequired = false;
+	checkIfYieldRequired = xTaskResumeFromISR( (TaskHandle_t)filterTaskHandle );
+	portYIELD_FROM_ISR( checkIfYieldRequired );
+}
+
+void HAL_I2SEx_TxRxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
+{
+	UNUSED(hi2s);
+  	halfComplete = 1;
+
+	BaseType_t checkIfYieldRequired = false;
+	checkIfYieldRequired = xTaskResumeFromISR( (TaskHandle_t)filterTaskHandle );
+	portYIELD_FROM_ISR( checkIfYieldRequired );
+
+}
+
 
 /* USER CODE END 4 */
 

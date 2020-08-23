@@ -31,6 +31,8 @@
 #include "OLED_Driver.h"
 #include "OLED_GFX.h"
 #include "FrequencyDisplay.h"
+#include "FrequencyDisplayLCD.h"
+#include "LiquidCrystal_I2C.h"
 #include "Encoder.h"
 
 /* USER CODE END Includes */
@@ -61,7 +63,7 @@ TIM_HandleTypeDef htim6;
 
 Si5351 synth;
 
-#define SAMPLES			1024				// Total number of samples left and right
+#define SAMPLES			2048				// Total number of samples left and right
 #define	BUF_SAMPLES		SAMPLES * 4		// Size of DMA tx/rx buffer samples * left/right * 2 for 32 bit samples
 
 // DMA Buffers
@@ -100,16 +102,20 @@ static void MX_I2S2_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM6_Init(void);
+
 /* USER CODE BEGIN PFP */
 
 void doPassthru(int b);
 void doFIR(int b);
 void changeFreqency( int f );
+void changeSideband();
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+int lastMult = 0;
 
 void changeFrequency( int currentFrequency )
 {
@@ -128,9 +134,13 @@ void changeFrequency( int currentFrequency )
 	  synth.set_freq_manual(freq, pllFreq, SI5351_CLK0);
 	  synth.set_freq_manual(freq, pllFreq, SI5351_CLK2);
 
-	  synth.set_phase(SI5351_CLK0, 0);
-	  synth.set_phase(SI5351_CLK2, mult);
-	  synth.pll_reset(SI5351_PLLA);
+	  if ( mult != lastMult )
+	  {
+		  synth.set_phase(SI5351_CLK0, 0);
+		  synth.set_phase(SI5351_CLK2, mult);
+		  synth.pll_reset(SI5351_PLLA);
+		  lastMult = mult;
+	  }
 }
 
 /* USER CODE END 0 */
@@ -139,6 +149,7 @@ void changeFrequency( int currentFrequency )
   * @brief  The application entry point.
   * @retval int
   */
+
 int main(void)
 {
   /* USER CODE BEGIN 1 */
@@ -191,21 +202,21 @@ int main(void)
   );
 
   synth.init( &hi2c1, SI5351_CRYSTAL_LOAD_8PF, 25000000, 0 );
-
-  /* USER CODE END 2 */
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-
-  //HAL_UART_Transmit( &huart2, (uint8_t *)"Hello World\r\n", 13, HAL_MAX_DELAY );
   changeFrequency( 7200000 );
   HAL_I2SEx_TransmitReceive_DMA(&hi2s2, txBuf, rxBuf, SAMPLES*2 );
-  FrequencyDisplay display = FrequencyDisplay( &oled, &encoder, 7200000 );
-  HAL_TIM_Base_Start_IT( &htim6 );
+
+  LiquidCrystal_I2C lcd(&hi2c1);
+  lcd.init();
+  lcd.backlight();
+
+  FrequencyDisplayLCD display = FrequencyDisplayLCD( &lcd, &encoder, 7200000 );
+
+  int lastDisplayChange = 0;
+  int lastFrequency = 0;
+  int lastSSBRead = 0;
 
   while (1)
   {
-
 	  if ( halfComplete )
 	  {
 		  doFIR(0);
@@ -218,6 +229,21 @@ int main(void)
 		  fullComplete = 0;
 	  }
 
+	  if ( lastSSBRead < HAL_GetTick() - 200 )
+	  {
+		  int mode = HAL_GPIO_ReadPin( GPIOB, GPIO_PIN_0 );
+		  if ( mode == GPIO_PIN_RESET )
+			  changeSideband();
+		  lastSSBRead = HAL_GetTick();
+	  }
+
+
+	  if ( display.getFrequency() != lastFrequency )
+	  {
+		  lastFrequency = display.getFrequency();
+		  changeFrequency( lastFrequency );
+	  }
+
 	  if ( encoder.hasChanged() )
 	  {
 		  display.change();
@@ -226,11 +252,9 @@ int main(void)
 
 	  HAL_GPIO_TogglePin( GPIOC, GPIO_PIN_5 );
 
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
   }
-  /* USER CODE END 3 */
+
+
 }
 
 /**
@@ -479,11 +503,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : ENC_SW_Pin */
-  GPIO_InitStruct.Pin = ENC_SW_Pin;
+  /*Configure GPIO pins : SSB_SW_Pin ENC_SW_Pin */
+  GPIO_InitStruct.Pin = SSB_SW_Pin|ENC_SW_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(ENC_SW_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pins : ENC_CLK_Pin ENC_DT_Pin */
   GPIO_InitStruct.Pin = ENC_CLK_Pin|ENC_DT_Pin;
@@ -499,6 +523,7 @@ static void MX_GPIO_Init(void)
 
 
 /* USER CODE BEGIN 4 */
+
 
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
@@ -583,15 +608,15 @@ void doFIR( int b )
 
 		arm_fir_f32	(
 				&arm_inst_right,
-				srcLeft,
+				srcRight,
 				destRight,
 				SAMPLES/2
 		);
 
 		for ( int pos = startBuf ; pos < endBuf ; pos+=4 )
 		{
-			  int lval = destLeft[i];
-			  int rval = destRight[i];
+			  int lval = (destLeft[i] + destRight[i]) * 8;
+			  int rval = (destLeft[i] + destRight[i]) * 8;
 
 			  txBuf[pos] = (lval>>16)&0xFFFF;
 			  txBuf[pos+1] = lval&0xFFFF;
@@ -603,6 +628,38 @@ void doFIR( int b )
 
 	  	HAL_GPIO_WritePin( GPIOB, GPIO_PIN_13, GPIO_PIN_RESET );
 
+}
+
+void changeSideband()
+{
+
+  // Swap upper/lower sideband
+  if ( coeffsLeft == plus45Coeffs )
+  {
+	  coeffsLeft = minus45Coeffs;
+	  coeffsRight = plus45Coeffs;
+  }
+  else
+  {
+	  coeffsRight = minus45Coeffs;
+	  coeffsLeft = plus45Coeffs;
+  }
+
+	  arm_fir_init_f32(
+			  &arm_inst_left,
+			  NUM_TAPS,
+			  coeffsLeft,
+			  &stateLeft[0],
+			  SAMPLES/2
+	  );
+
+	  arm_fir_init_f32(
+			  &arm_inst_right,
+			  NUM_TAPS,
+			  coeffsRight,
+			  &stateRight[0],
+			  SAMPLES/2
+	  );
 }
 
 /*
@@ -626,14 +683,15 @@ added to the function at the bottom
 
 void HAL_I2SEx_TxRxCpltCallback(I2S_HandleTypeDef *hi2s)
 {
-	  UNUSED(hi2s);
-	  fullComplete = 1;
+	UNUSED(hi2s);
+	fullComplete = 1;
+
 }
 
 void HAL_I2SEx_TxRxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 {
-  UNUSED(hi2s);
-  halfComplete = 1;
+	UNUSED(hi2s);
+  	halfComplete = 1;
 }
 
 

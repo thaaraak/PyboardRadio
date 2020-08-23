@@ -8,7 +8,6 @@
 uint8_t color_byte[2],color_fill_byte[2];
 extern SPI_HandleTypeDef hspi1;
 
-
 #ifdef __cplusplus
 extern "C"  {
 #endif

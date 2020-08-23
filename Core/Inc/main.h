@@ -34,7 +34,6 @@ extern "C" {
 /* USER CODE BEGIN Includes */
 #define INTERFACE_4WIRE_SPI 1
 #define INTERFACE_3WIRE_SPI !(INTERFACE_4WIRE_SPI)
-
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -66,6 +65,8 @@ void Error_Handler(void);
 #define OLED_DC_GPIO_Port GPIOA
 #define OLED_CS_Pin GPIO_PIN_3
 #define OLED_CS_GPIO_Port GPIOA
+#define SSB_SW_Pin GPIO_PIN_0
+#define SSB_SW_GPIO_Port GPIOB
 #define ENC_CLK_Pin GPIO_PIN_13
 #define ENC_CLK_GPIO_Port GPIOB
 #define ENC_CLK_EXTI_IRQn EXTI15_10_IRQn
