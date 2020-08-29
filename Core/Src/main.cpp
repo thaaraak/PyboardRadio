@@ -34,6 +34,7 @@
 #include "FrequencyDisplayLCD.h"
 #include "LiquidCrystal_I2C.h"
 #include "Encoder.h"
+#include "Bounce2.h"
 
 /* USER CODE END Includes */
 
@@ -92,6 +93,9 @@ arm_fir_instance_f32 arm_inst_right;
 OLED_GFX oled = OLED_GFX();
 Encoder encoder( GPIOB, GPIO_PIN_13, GPIOB, GPIO_PIN_14 );
 FrequencyDisplayLCD *display;
+
+Bounce	ssbButton;
+Bounce	radixButton;
 
 /* USER CODE END PV */
 
@@ -219,9 +223,16 @@ int main(void)
   display = new FrequencyDisplayLCD( &lcd, &encoder, 7200000 );
   displaySSB();
 
+  ssbButton.attach( GPIOB, GPIO_PIN_0 );
+  ssbButton.interval(20);
+
+  radixButton.attach( GPIOB, GPIO_PIN_15 );
+  radixButton.interval(20);
+
   int lastFrequency = 0;
   unsigned int lastSSBRead = 0;
   unsigned int lastModeRead = 0;
+  int value = 0;
 
   while (1)
   {
@@ -237,20 +248,26 @@ int main(void)
 		  fullComplete = 0;
 	  }
 
-	  if ( lastSSBRead < HAL_GetTick() - 80 )
+	  ssbButton.update();
+	  value = ssbButton.read();
+
+	  if ( value != lastSSBRead )
 	  {
-		  int mode = HAL_GPIO_ReadPin( GPIOB, GPIO_PIN_0 );
-		  if ( mode == GPIO_PIN_RESET )
-			  changeSideband();
-		  lastSSBRead = HAL_GetTick();
+	    lastSSBRead = value;
+
+	    if ( value == 0 )
+	      changeSideband();
 	  }
 
-	  if ( lastModeRead < HAL_GetTick() - 80 )
+	  radixButton.update();
+	  value = radixButton.read();
+
+	  if ( value != lastModeRead )
 	  {
-		  int mode = HAL_GPIO_ReadPin( GPIOB, GPIO_PIN_15 );
-		  if ( mode == GPIO_PIN_RESET )
-			  display->changeMode();
-		  lastModeRead = HAL_GetTick();
+	    lastModeRead = value;
+
+	    if ( value == 0 )
+	      display->changeMode();
 	  }
 
 	  if ( display->getFrequency() != lastFrequency )
