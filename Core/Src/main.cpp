@@ -221,6 +221,7 @@ int main(void)
 
   int lastFrequency = 0;
   unsigned int lastSSBRead = 0;
+  unsigned int lastModeRead = 0;
 
   while (1)
   {
@@ -236,7 +237,7 @@ int main(void)
 		  fullComplete = 0;
 	  }
 
-	  if ( lastSSBRead < HAL_GetTick() - 40 )
+	  if ( lastSSBRead < HAL_GetTick() - 80 )
 	  {
 		  int mode = HAL_GPIO_ReadPin( GPIOB, GPIO_PIN_0 );
 		  if ( mode == GPIO_PIN_RESET )
@@ -244,6 +245,13 @@ int main(void)
 		  lastSSBRead = HAL_GetTick();
 	  }
 
+	  if ( lastModeRead < HAL_GetTick() - 80 )
+	  {
+		  int mode = HAL_GPIO_ReadPin( GPIOB, GPIO_PIN_15 );
+		  if ( mode == GPIO_PIN_RESET )
+			  display->changeMode();
+		  lastModeRead = HAL_GetTick();
+	  }
 
 	  if ( display->getFrequency() != lastFrequency )
 	  {

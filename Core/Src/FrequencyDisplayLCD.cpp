@@ -30,6 +30,7 @@ void FrequencyDisplayLCD::changeMode()
 		_mode = Mode::MODE_CHANGE_RADIX;
 	else
 		_mode = Mode::MODE_CHANGE_FREQUENCY;
+	displayFrequency();
 }
 
 void FrequencyDisplayLCD::changeFrequency()
@@ -44,9 +45,6 @@ void FrequencyDisplayLCD::changeFrequency()
 
 void FrequencyDisplayLCD::changeRadix()
 {
-	int pos = rpos[_radix].pos;
-//	_oled->fillRect( pos*_xadvance, 55, _xadvance, 4, _bgcolor );
-
 	if ( _encoder->isUp() && _radix < MAX_RADIX-1)
 		_radix++;
 	else if ( _encoder->isDown() && _radix > 0 )
@@ -63,8 +61,14 @@ void FrequencyDisplayLCD::displayFrequency()
 	  _lcd->setCursor( 0, 0 );
 	  _lcd->printf( "%02d.%03d.%02d ", millions, thousands, units/10 );
 
-//	  int pos = rpos[_radix].pos;
-//	  _oled->fillRect( pos*_xadvance, 55, _xadvance, 4, _color );
+	  int pos = rpos[_radix].pos;
+	  _lcd->setCursor( pos, 0 );
+	  _lcd->cursor();
+
+		if ( _mode == Mode::MODE_CHANGE_RADIX )
+			_lcd->blink();
+		else
+			_lcd->noBlink();
 
 
 }
@@ -73,5 +77,6 @@ void FrequencyDisplayLCD::displaySSB( const char* ssb )
 {
 	  _lcd->setCursor( 12, 1 );
 	  _lcd->printf( ssb );
+	  displayFrequency();
 
 }
