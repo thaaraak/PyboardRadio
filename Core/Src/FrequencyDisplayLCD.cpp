@@ -68,3 +68,10 @@ void FrequencyDisplayLCD::displayFrequency()
 
 
 }
+
+void FrequencyDisplayLCD::displaySSB( const char* ssb )
+{
+	  _lcd->setCursor( 12, 1 );
+	  _lcd->printf( ssb );
+
+}

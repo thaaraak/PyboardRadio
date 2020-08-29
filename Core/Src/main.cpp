@@ -91,6 +91,7 @@ arm_fir_instance_f32 arm_inst_right;
 
 OLED_GFX oled = OLED_GFX();
 Encoder encoder( GPIOB, GPIO_PIN_13, GPIOB, GPIO_PIN_14 );
+FrequencyDisplayLCD *display;
 
 /* USER CODE END PV */
 
@@ -109,13 +110,19 @@ void doPassthru(int b);
 void doFIR(int b);
 void changeFreqency( int f );
 void changeSideband();
+void displaySSB();
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+#define MODE_USB	0
+#define MODE_LSB	1
+
 int lastMult = 0;
+int ssbMode = MODE_LSB;
+
 
 void changeFrequency( int currentFrequency )
 {
@@ -209,11 +216,11 @@ int main(void)
   lcd.init();
   lcd.backlight();
 
-  FrequencyDisplayLCD display = FrequencyDisplayLCD( &lcd, &encoder, 7200000 );
+  display = new FrequencyDisplayLCD( &lcd, &encoder, 7200000 );
+  displaySSB();
 
-  int lastDisplayChange = 0;
   int lastFrequency = 0;
-  int lastSSBRead = 0;
+  unsigned int lastSSBRead = 0;
 
   while (1)
   {
@@ -229,7 +236,7 @@ int main(void)
 		  fullComplete = 0;
 	  }
 
-	  if ( lastSSBRead < HAL_GetTick() - 200 )
+	  if ( lastSSBRead < HAL_GetTick() - 40 )
 	  {
 		  int mode = HAL_GPIO_ReadPin( GPIOB, GPIO_PIN_0 );
 		  if ( mode == GPIO_PIN_RESET )
@@ -238,15 +245,15 @@ int main(void)
 	  }
 
 
-	  if ( display.getFrequency() != lastFrequency )
+	  if ( display->getFrequency() != lastFrequency )
 	  {
-		  lastFrequency = display.getFrequency();
+		  lastFrequency = display->getFrequency();
 		  changeFrequency( lastFrequency );
 	  }
 
 	  if ( encoder.hasChanged() )
 	  {
-		  display.change();
+		  display->change();
 		  encoder.reset();
 	  }
 
@@ -630,8 +637,23 @@ void doFIR( int b )
 
 }
 
+void displaySSB()
+{
+	  if ( ssbMode == MODE_USB )
+		  display->displaySSB("USB");
+	  else
+		  display->displaySSB("LSB");
+}
+
 void changeSideband()
 {
+
+  if ( ssbMode == MODE_USB )
+	  ssbMode = MODE_LSB;
+  else
+	  ssbMode = MODE_USB;
+
+  displaySSB();
 
   // Swap upper/lower sideband
   if ( coeffsLeft == plus45Coeffs )

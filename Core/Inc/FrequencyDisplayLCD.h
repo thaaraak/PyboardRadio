@@ -23,6 +23,7 @@ class FrequencyDisplayLCD
     void changeFrequency();
     void changeRadix();
     void displayFrequency();
+    void displaySSB( const char* ssb );
 
     int getFrequency() { return _frequency; }
 
